@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.sites-runtime/
+*.zip
+test-results/
+server*.log
+*.tsbuildinfo
+tests/qa.html
+tests/playback.html
+tests/output.webm
+.openai/
+.env
+.env.*
+*.pem
+*.key
+tests/fixtures/*.fbx
