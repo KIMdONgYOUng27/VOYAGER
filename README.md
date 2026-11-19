@@ -4,6 +4,10 @@
 
 ## 시작
 
+웹 버전: https://kimdongyoung27.github.io/VOYAGER/
+
+GitHub Pages는 `.github/workflows/deploy.yml`로 배포합니다. `main`에 push하면 의존성 설치 → 테스트 → `/VOYAGER/` 경로로 빌드 → Pages 배포가 실행됩니다. 로컬과 일반 호스팅은 `pnpm build`, Pages용 빌드는 `pnpm build:pages`를 사용합니다. GitHub Actions에서 배포 결과를 확인할 수 있습니다. 별도 API 키는 필요하지 않습니다.
+
 Windows에서는 `실행.cmd`를 더블클릭합니다. 의존성이 설치된 이 작업 폴더에서 로컬 서버를 시작하고 기본 브라우저를 엽니다. Node.js 22.13 이상이 필요합니다.
 
 다른 컴퓨터에서는 Node.js와 pnpm을 설치하고 다음 명령을 실행합니다.

@@ -9,7 +9,8 @@
     "build": "tsc -b && vite build",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "preview": "vite preview --host 127.0.0.1",
-    "fixtures": "node scripts/fixtures.mjs"
+    "fixtures": "node scripts/fixtures.mjs",
+    "build:pages": "tsc -b && vite build --mode pages"
   },
   "dependencies": {
     "react": "^19.1.0",
