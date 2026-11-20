@@ -1,3 +1,6 @@
+import {activeCamera,cameraPoseAt} from './cameras.ts';
+import {configureRenderCamera,type RenderCamera} from './cameraRendering.ts';
+import {encodeMp4} from './mp4.ts';
 import * as T from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {clone} from 'three/addons/utils/SkeletonUtils.js';
@@ -30,26 +33,26 @@ function demoPose(actor:Actor,id:string,t:number,weight:number){
  }
 }
 export class StudioEngine{
- renderer:T.WebGLRenderer;scene=new T.Scene();stageRoot=new T.Group();baseFov=38;camera:T.PerspectiveCamera|T.OrthographicCamera=new T.PerspectiveCamera(38,16/9,.05,150);controls!:OrbitControls;actors:Actor[]=[];grid:T.GridHelper;raf=0;unsubscribe:()=>void;resize:ResizeObserver;lastBase='';baseObject:T.Group|undefined;lastTime=0;frames=0;fps=0;fpsStamp=0;recorder:MediaRecorder|null=null;cancelExport:(()=>void)|null=null;exporting=false;exportEnd=0;host:HTMLElement;onStats:(fps:number,warnings:string[])=>void;disposed=false;
+ renderCamera?:RenderCamera;cameraGizmos=new Map<string,{camera:RenderCamera;helper:T.CameraHelper}>();exportCameraId:string|undefined;renderer:T.WebGLRenderer;scene=new T.Scene();stageRoot=new T.Group();baseFov=38;camera:T.PerspectiveCamera|T.OrthographicCamera=new T.PerspectiveCamera(38,16/9,.05,150);controls!:OrbitControls;actors:Actor[]=[];grid:T.GridHelper;raf=0;unsubscribe:()=>void;resize:ResizeObserver;lastBase='';baseObject:T.Group|undefined;lastTime=0;frames=0;fps=0;fpsStamp=0;recorder:MediaRecorder|null=null;cancelExport:(()=>void)|null=null;exporting=false;exportEnd=0;host:HTMLElement;onStats:(fps:number,warnings:string[])=>void;disposed=false;
  constructor(host:HTMLElement,onStats:(fps:number,warnings:string[])=>void){
- this.host=host;this.onStats=onStats;this.renderer=new T.WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true,powerPreference:'low-power'});this.renderer.outputColorSpace=T.SRGBColorSpace;this.renderer.setClearColor('#171b22');host.appendChild(this.renderer.domElement);
- this.scene.fog=new T.Fog('#171b22',24,65);this.scene.add(new T.HemisphereLight('#e6efff','#3b4354',2.7));const key=new T.DirectionalLight('#e1ebff',3);key.position.set(4,8,6);this.scene.add(key);const fill=new T.DirectionalLight('#718ac4',1.4);fill.position.set(-5,3,-3);this.scene.add(fill);
- const floor=new T.Mesh(new T.PlaneGeometry(120,120),new T.MeshStandardMaterial({color:'#1b2028',roughness:1}));floor.rotation.x=-Math.PI/2;floor.position.y=-.012;this.scene.add(floor);
- this.grid=new T.GridHelper(30,30,'#4d596b','#2c3441');this.scene.add(this.grid);
- const front=new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(-5,.006,3.6),new T.Vector3(5,.006,3.6)]),new T.LineBasicMaterial({color:'#5373a8',transparent:true,opacity:.5}));this.scene.add(front);
- this.scene.add(this.stageRoot);this.createControls();this.setCamera('Front Wide');
+ this.host=host;this.onStats=onStats;this.renderer=new T.WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true,powerPreference:'low-power'});this.renderer.outputColorSpace=T.SRGBColorSpace;this.renderer.setClearColor('#303030');host.appendChild(this.renderer.domElement);
+ this.scene.fog=new T.Fog('#303030',24,65);this.scene.add(new T.HemisphereLight('#ffffff','#555555',2.7));const key=new T.DirectionalLight('#ffffff',3);key.position.set(4,8,6);this.scene.add(key);const fill=new T.DirectionalLight('#dddddd',1.4);fill.position.set(-5,3,-3);this.scene.add(fill);
+ const floor=new T.Mesh(new T.PlaneGeometry(120,120),new T.MeshStandardMaterial({color:'#484848',roughness:1}));floor.rotation.x=-Math.PI/2;floor.position.y=-.012;this.scene.add(floor);
+ this.grid=new T.GridHelper(30,30,'#777777','#555555');this.scene.add(this.grid);
+ const front=new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(-5,.006,3.6),new T.Vector3(5,.006,3.6)]),new T.LineBasicMaterial({color:'#999999',transparent:true,opacity:.5}));this.scene.add(front);
+ this.scene.add(this.stageRoot);this.createControls();this.setCamera('45-Degree');
  this.renderer.domElement.addEventListener('pointerdown',this.pick);
  this.resize=new ResizeObserver(()=>this.fit());this.resize.observe(host);this.fit();
- this.unsubscribe=useStudio.subscribe((s,prev)=>{if(s.project.cameraBase!==prev.project.cameraBase&&s.project.cameraBase&&!s.cameraAnimation)this.applyCamera(s.project.cameraBase);if(s.quality!==prev.quality||s.project.output.aspect!==prev.project.output.aspect)this.fit();if(s.cameraMode!==prev.cameraMode&&s.cameraMode!=='Free Camera')this.setCamera(s.cameraMode);});
+ this.unsubscribe=useStudio.subscribe((s,prev)=>{if(s.quality!==prev.quality||s.project.output.aspect!==prev.project.output.aspect)this.fit();if(s.cameraMode!==prev.cameraMode&&s.cameraMode!=='Free Camera')this.setCamera(s.cameraMode);});
  this.animate();
  }
- pick=(e:PointerEvent)=>{if(this.exporting)return;const rect=this.renderer.domElement.getBoundingClientRect();const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1),this.camera);const hits=ray.intersectObjects(this.stageRoot.visible?this.actors.filter(a=>a.group.visible).map(a=>a.root):[],true);if(hits.length){let o:T.Object3D|null=hits[0].object;while(o&&o.userData.member===undefined)o=o.parent;if(o)useStudio.setState({selected:o.userData.member,clip:null,selectedKey:null,selectionTarget:'member'});}};
+ pick=(e:PointerEvent)=>{if(this.exporting||useStudio.getState().viewMode==='camera')return;const rect=this.renderer.domElement.getBoundingClientRect();const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1),this.camera);const hits=ray.intersectObjects(this.stageRoot.visible?this.actors.filter(a=>a.group.visible).map(a=>a.root):[],true);if(hits.length){let o:T.Object3D|null=hits[0].object;while(o&&o.userData.member===undefined)o=o.parent;if(o)useStudio.setState({selected:o.userData.member,clip:null,selectedKey:null,selectionTarget:'member'});}};
  createControls(){
   const target=this.controls?.target.clone()??new T.Vector3(0,.8,0);
   this.controls?.dispose();this.controls=new OrbitControls(this.camera,this.renderer.domElement);
   this.controls.target.copy(target);this.controls.enableDamping=false;this.controls.minDistance=2;this.controls.maxDistance=50;this.controls.minZoom=.2;this.controls.maxZoom=8;this.controls.maxPolarAngle=Math.PI;this.controls.enabled=!this.exporting;
   this.controls.addEventListener('change',()=>{if(!this.exporting&&!useStudio.getState().playing)useStudio.setState(s=>({viewRevision:s.viewRevision+1}));});
-  this.controls.addEventListener('start',()=>{if(!this.exporting)useStudio.setState({cameraAnimation:false,cameraMode:'Free Camera'});});
+  this.controls.addEventListener('start',()=>{if(!this.exporting)useStudio.setState({viewMode:'editor',cameraAnimation:false,cameraMode:'Free Camera'});});
  }
  frameCamera(width:number,height:number,ratio:number){
   const aspect=width/height;
@@ -83,10 +86,10 @@ export class StudioEngine{
   const size=this.renderer.getSize(new T.Vector2());this.frameCamera(size.x,size.y,useStudio.getState().project.output.aspect==='16:9'?16/9:9/16);this.controls.update();
  }
  numpad(code:string,opposite=false){
+  if(code==='Numpad0'){const s=useStudio.getState();useStudio.setState({viewMode:s.viewMode==='camera'?'editor':'camera'});return;}
   const s=useStudio.getState();useStudio.setState({cameraAnimation:false,cameraMode:'Free Camera'});
   const axis:Record<string,string>={Numpad1:'Z',Numpad3:'X',Numpad7:'Y'};
   if(axis[code]){this.setCamera('Axis '+(opposite?'-':'+')+axis[code]);useStudio.setState({cameraMode:'Axis '+(opposite?'-':'+')+axis[code]});return;}
-  if(code==='Numpad0'){const pose=cameraAt(s.project.cameras,s.time)??s.project.cameraBase;if(pose){this.applyCamera(pose);useStudio.setState({cameraAnimation:true});}else notice('카메라 탭에서 현재 구도를 먼저 저장하세요.');return;}
   if(code==='Numpad5'){const pose=this.captureCamera(),size=this.renderer.getSize(new T.Vector2()),ratio=s.project.output.aspect==='16:9'?16/9:9/16,span=Math.max(6,10/ratio)*Math.max(1,ratio/(size.x/size.y)),perspectiveSpan=2*this.camera.position.distanceTo(this.controls.target)*Math.tan(this.baseFov*Math.PI/360);const ortho=pose.projection==='orthographic';pose.projection=ortho?'perspective':'orthographic';pose.zoom=(pose.zoom??1)*(ortho?perspectiveSpan/span:span/perspectiveSpan);this.applyCamera(pose);return;}
   if(code==='NumpadDecimal'){const pos=positionsAt(s.project,s.time)[s.selected];const offset=this.camera.position.clone().sub(this.controls.target).normalize().multiplyScalar(5);this.controls.target.set(pos[0],pos[1]+.9,pos[2]);this.camera.position.copy(this.controls.target).add(offset);this.camera.zoom=1;}
   else if(code==='NumpadAdd'||code==='NumpadSubtract'){this.camera.zoom=T.MathUtils.clamp(this.camera.zoom*(code==='NumpadAdd'?1.2:1/1.2),.2,8);this.camera.updateProjectionMatrix();}
@@ -120,30 +123,44 @@ export class StudioEngine{
   }
   if(active.some(c=>resources.get(c.asset)?.clip))a.mixer.update(0);
  }
- const cam=s.cameraAnimation?cameraAt(p.cameras,t):null;if(cam)this.applyCamera(cam);
+
  this.grid.visible=s.grid&&!this.exporting;const warnings:string[]=[];if(p.baseRig&&!source)warnings.push('기준 FBX 누락');if(missing)warnings.push('모션 에셋 누락');if(source&&p.clips.some(c=>c.asset.startsWith('demo-')&&t>=c.start&&t<c.start+c.duration))warnings.push('샘플 모션은 기본 마네킹 전용');
  for(let i=0;i<5;i++)for(let j=i+1;j<5;j++)if(new T.Vector3(...pos[i]).distanceTo(new T.Vector3(...pos[j]))<.65)warnings.push(`${p.members[i].name} ↔ ${p.members[j].name} 근접`);
- this.renderer.render(this.scene,this.camera);return warnings;
+ this.drawScene(t);return warnings;
  }
- animate=()=>{if(this.disposed)return;this.raf=requestAnimationFrame(this.animate);let s=useStudio.getState();let t=s.time;if(s.playing){t=sound.now();if(this.exporting&&t>=this.exportEnd){this.cancelExport?.();return;}if(t>=s.project.duration){if(s.loop&&!this.exporting){t=0;void sound.start(0,s.project.rate,s.project.audio);}else{t=s.project.duration;sound.stop();useStudio.setState({playing:false});}}useStudio.setState({time:t});}
+ drawScene(t:number){
+  const s=useStudio.getState(),p=s.project;
+  if(!this.renderer.getSize){this.renderer.render(this.scene,this.camera);return;}
+  const size=this.renderer.getSize(new T.Vector2()),ratio=p.output.aspect==='16:9'?16/9:9/16;
+  this.renderCamera=configureRenderCamera(this.renderCamera,cameraPoseAt(p,t,this.exportCameraId),ratio);
+  this.controls.enabled=!this.exporting&&s.viewMode==='editor';
+  for(const [id,g] of this.cameraGizmos){if(!p.sceneCameras?.some(c=>c.id===id)){g.helper.dispose();g.helper.removeFromParent();this.cameraGizmos.delete(id);}}
+  for(const c of p.sceneCameras??[]){let gizmo=this.cameraGizmos.get(c.id);const camera=configureRenderCamera(gizmo?.camera,cameraPoseAt(p,t,c.id),ratio);camera.far=2;camera.updateProjectionMatrix();if(!gizmo||gizmo.camera!==camera){gizmo?.helper.dispose();gizmo?.helper.removeFromParent();const helper=new T.CameraHelper(camera);helper.material=new T.LineBasicMaterial({color:c.id===p.activeCameraId?'#eeeeee':'#777777'});this.scene.add(helper);gizmo={camera,helper};this.cameraGizmos.set(c.id,gizmo);}gizmo.helper.update();gizmo.helper.visible=!this.exporting&&s.viewMode==='editor'&&camera.position.distanceTo(this.camera.position)>.5;(gizmo.helper.material as T.LineBasicMaterial).color.set(c.id===p.activeCameraId?'#eeeeee':'#777777');}
+  this.renderer.setScissorTest(false);this.renderer.setViewport(0,0,size.x,size.y);this.renderer.clear();
+  if(this.exporting){this.renderer.render(this.scene,this.renderCamera);return;}
+  if(s.viewMode==='camera'){
+   const w=Math.min(size.x,size.y*ratio),h=w/ratio;this.grid.visible=false;this.actors.forEach(a=>a.ring.visible=false);this.renderer.setViewport((size.x-w)/2,(size.y-h)/2,w,h);this.renderer.render(this.scene,this.renderCamera);this.actors.forEach(a=>a.ring.visible=true);this.renderer.setViewport(0,0,size.x,size.y);return;
+  }
+  this.renderer.render(this.scene,this.camera);
+  if(s.cameraPreview&&size.x>450&&size.y>230){const w=Math.min(230,size.x*.3,size.y*.36*ratio),h=w/ratio,x=size.x-w-12,y=size.y-h-12;const oldGrid=this.grid.visible;this.grid.visible=false;this.cameraGizmos.forEach(g=>g.helper.visible=false);this.actors.forEach(a=>a.ring.visible=false);this.renderer.setScissorTest(true);this.renderer.setScissor(x,y,w,h);this.renderer.setViewport(x,y,w,h);this.renderer.clear();this.renderer.render(this.scene,this.renderCamera);this.renderer.setScissorTest(false);this.renderer.setViewport(0,0,size.x,size.y);this.grid.visible=oldGrid;this.actors.forEach(a=>a.ring.visible=true);}
+ }
+ animate=()=>{if(this.disposed)return;this.raf=requestAnimationFrame(this.animate);if(this.exporting)return;let s=useStudio.getState();let t=s.time;if(s.playing){t=sound.now();if(this.exporting&&t>=this.exportEnd){if(this.recorder?.state==='recording')this.recorder.stop();sound.stop();useStudio.setState({playing:false});return;}if(t>=s.project.duration){if(s.loop&&!this.exporting){t=0;void sound.start(0,s.project.rate,s.project.audio);}else{t=s.project.duration;sound.stop();useStudio.setState({playing:false});}}useStudio.setState({time:t});}
  try{const warnings=this.evaluate(t);this.frames++;const now=performance.now();if(now-this.fpsStamp>700){this.fps=Math.round(this.frames*1000/(now-this.fpsStamp));this.frames=0;this.fpsStamp=now;this.onStats(this.fps,warnings);}}catch(e){notice((e as Error).message);useStudio.setState({playing:false});sound.stop();}
  };
  async play(){const s=useStudio.getState();if(s.playing){sound.stop();useStudio.setState({playing:false});}else{const t=s.time>=s.project.duration?0:s.time;await sound.start(t,s.project.rate,s.project.audio);useStudio.setState({time:t,playing:true});}}
  async seek(t:number){const s=useStudio.getState();if(s.recording)return;t=Math.max(0,Math.min(s.project.duration,t));if(s.playing)await sound.start(t,s.project.rate,s.project.audio);useStudio.setState({time:t});}
- async exportVideo(onProgress:(n:number)=>void):Promise<Blob|undefined>{
- const s=useStudio.getState(),p=s.project,o=p.output;if(this.exporting)return;if(typeof MediaRecorder==='undefined'||!this.renderer.domElement.captureStream)throw Error('이 브라우저는 영상 녹화를 지원하지 않습니다. 최신 Chrome 또는 Edge를 사용하세요.');
- const mime=['video/webm;codecs=vp8,opus','video/webm;codecs=vp9,opus','video/webm','video/mp4'].find(m=>MediaRecorder.isTypeSupported(m));if(!mime)throw Error('지원되는 영상 인코더가 없습니다.');
- if(p.assets.some(a=>a.kind!=='demo'&&(a.id===p.audio||a.id===p.baseRig||p.clips.some(c=>c.asset===a.id))&&!resources.has(a.id)))throw Error('누락된 FBX/음악을 다시 연결한 뒤 출력하세요.');
- if(p.baseRig&&p.clips.some(c=>c.asset.startsWith('demo-')&&c.start<o.end&&c.start+c.duration>o.start))throw Error('FBX 캐릭터에서는 기본 샘플 모션을 사용할 수 없습니다. 샘플 클립을 FBX 모션으로 교체하세요.');
- sound.stop();useStudio.setState({playing:false});await sound.ensure();this.exporting=true;this.exportEnd=o.end;useStudio.setState({recording:true,time:o.start});
- const previousCamera=this.captureCamera();this.controls.enabled=false;this.actors.forEach(a=>a.ring.visible=false);this.renderer.setPixelRatio(1);const width=o.aspect==='16:9'?Math.round(o.height*16/9):Math.round(o.height*9/16/2)*2;this.renderer.setSize(width,o.height);this.frameCamera(width,o.height,width/o.height);this.evaluate(o.start);
- const stream=this.renderer.domElement.captureStream(o.fps);if(o.audio&&p.audio)sound.destination!.stream.getAudioTracks().forEach(track=>stream.addTrack(track));
- let result:Blob|null=null;try{await new Promise<void>((resolve,reject)=>{
-  const chunks:Blob[]=[];let timer:ReturnType<typeof setInterval>|undefined;let failure:Error|null=null;const recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:o.height===1080?8_000_000:5_000_000});this.recorder=recorder;
-  recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};recorder.onerror=()=>{failure=new Error('영상 인코딩에 실패했습니다. 해상도를 낮춰 다시 시도하세요.');if(recorder.state!=='inactive')recorder.stop();};
-  recorder.onstop=()=>{if(timer)clearInterval(timer);this.cancelExport=null;this.recorder=null;sound.stop();useStudio.setState({playing:false});if(failure){reject(failure);return;}if(!chunks.length){reject(Error('출력된 영상 데이터가 없습니다.'));return;}result=new Blob(chunks,{type:mime});download(result,`${p.name}.${mime.includes('mp4')?'mp4':'webm'}`);onProgress(1);notice('영상 출력 완료 · 실시간 녹화 방식');resolve();};
-  this.cancelExport=()=>{if(recorder.state!=='inactive')recorder.stop();};recorder.start(250);sound.start(o.start,1,p.audio,o.audio).then(()=>useStudio.setState({playing:true})).catch(e=>{failure=e;recorder.stop();});timer=setInterval(()=>onProgress(Math.min(.99,Math.max(0,(sound.now()-o.start)/(o.end-o.start)))),100);
- });}finally{stream.getVideoTracks().forEach(track=>track.stop());sound.stop();this.exporting=false;this.controls.enabled=true;this.actors.forEach(a=>a.ring.visible=true);this.applyCamera(previousCamera);useStudio.setState({recording:false,playing:false,time:o.start});this.fit();}return (result as Blob|null)??undefined;
+ async exportVideo(onProgress:(n:number)=>void,selection?:{id:string;start:number;end:number}):Promise<Blob|undefined>{
+  const s=useStudio.getState(),p=s.project,o=p.output,start=selection?.start??o.start,end=selection?.end??o.end;
+  if(this.exporting)return;
+  if(!(start>=0&&end>start&&end<=p.duration))throw Error('녹화 구간을 확인하세요.');
+  if(p.assets.some(a=>a.kind!=='demo'&&(a.id===p.audio||a.id===p.baseRig||p.clips.some(c=>c.asset===a.id))&&!resources.has(a.id)))throw Error('누락된 FBX/음악을 다시 연결하세요.');
+  if(p.baseRig&&p.clips.some(c=>c.asset.startsWith('demo-')&&c.start<end&&c.start+c.duration>start))throw Error('샘플 클립을 FBX 모션으로 교체하세요.');
+  const previousTime=s.time;sound.stop();this.exporting=true;this.exportCameraId=selection?.id??activeCamera(p)?.id;useStudio.setState({playing:false,recording:true,time:start});
+  const abort=new AbortController();this.cancelExport=()=>abort.abort();
+  try{
+   this.controls.enabled=false;this.actors.forEach(a=>a.ring.visible=false);this.renderer.setPixelRatio(1);const width=o.aspect==='16:9'?Math.round(o.height*16/9):Math.round(o.height*9/16/2)*2;this.renderer.setSize(width,o.height);
+   return await encodeMp4({canvas:this.renderer.domElement,start,end,fps:o.fps,audio:o.audio&&p.audio?resources.get(p.audio)?.buffer:undefined,render:t=>{this.evaluate(t);useStudio.setState({time:t});},onProgress,signal:abort.signal});
+  }finally{this.cancelExport=null;this.exporting=false;this.exportCameraId=undefined;this.controls.enabled=s.viewMode==='editor';this.actors.forEach(a=>a.ring.visible=true);useStudio.setState({recording:false,playing:false,time:previousTime});this.fit();}
  }
- dispose(){this.disposed=true;cancelAnimationFrame(this.raf);this.cancelExport?.();this.unsubscribe();this.resize.disconnect();this.controls.dispose();this.renderer.domElement.removeEventListener('pointerdown',this.pick);this.clearActors();this.scene.traverse(o=>{const m=o as T.Mesh;if(m.geometry)m.geometry.dispose();if(m.material)for(const v of Array.isArray(m.material)?m.material:[m.material])if(v!==meshMaterial)v.dispose();});this.renderer.dispose();this.renderer.domElement.remove();}
+ dispose(){this.disposed=true;cancelAnimationFrame(this.raf);this.cancelExport?.();this.unsubscribe();this.resize.disconnect();this.controls.dispose();this.renderer.domElement.removeEventListener('pointerdown',this.pick);this.clearActors();this.scene.traverse(o=>{const m=o as T.Mesh;if(m.geometry)m.geometry.dispose();if(m.material)for(const v of Array.isArray(m.material)?m.material:[m.material])if(v!==meshMaterial)v.dispose();});this.cameraGizmos.forEach(g=>g.helper.dispose());this.renderer.dispose();this.renderer.domElement.remove();}
 }

@@ -1,9 +1,10 @@
+import {setCameraPose,activeCamera,cameraPoseAt} from './cameras.ts';
 import {Color} from 'three';
 import {uid,positionsAt,worldDeltaToLocal,memberTransformAt,stageTransformAt,samplePositionKeys,cameraRotation,type Project,type Vec3,type Property,type PropertyKey,type CameraPose,type Ease} from './model.ts';
 import {putMemberPosition,putClipPosition} from './spatial.ts';
 
 export type Target='member'|'stage'|'camera';
-export type KeyRef={kind:'memberPosition'|'memberProperty'|'clipPosition'|'stagePosition'|'stageProperty'|'stagePreset'|'formation'|'camera';id:string;member?:number;clip?:string};
+export type KeyRef={kind:'memberPosition'|'memberProperty'|'clipPosition'|'stagePosition'|'stageProperty'|'stagePreset'|'formation'|'camera';id:string;member?:number;clip?:string;camera?:string};
 export const atFrame=(a:number,b:number,p:Project)=>Math.abs(a-b)<.5/p.output.fps;
 const frame=(p:Project,t:number)=>Math.max(0,Math.min(p.duration,Math.round(t*p.output.fps)/p.output.fps));
 
@@ -70,13 +71,9 @@ export function editStagePosition(p:Project,t:number,position:Vec3,auto:boolean)
  if(auto||p.stagePositionKeys?.some(k=>atFrame(k.time,t,p))){putStageTransformPosition(p,t,position);return;}
  const now=stageTransformAt(p,t).position;p.stageTransform??={};const base=p.stageTransform.position??[0,0,0];p.stageTransform.position=base.map((v,i)=>v+position[i]-now[i]) as Vec3;
 }
-export function putCameraKey(p:Project,pose:CameraPose,t:number){
- const time=frame(p,t),previous=p.cameras.find(k=>atFrame(k.time,time,p));
- p.cameras=[...p.cameras.filter(k=>k!==previous),{...structuredClone(pose),rotation:cameraRotation(pose),id:previous?.id??uid(),time}];
- p.cameraBase=structuredClone(pose);
-}
+export function putCameraKey(p:Project,pose:CameraPose,t:number){setCameraPose(p,pose,t,true);}
 export function insertTransformKeys(p:Project,target:Target,member:number,t:number,camera?:CameraPose){
- if(target==='camera'){if(camera)putCameraKey(p,camera,t);return;}
+ if(target==='camera'){putCameraKey(p,cameraPoseAt(p,t),t);return;}
  const pose=target==='member'?memberTransformAt(p,member,t):stageTransformAt(p,t);
  if(target==='member')putMemberPosition(p,member,t,positionsAt(p,t)[member]);else putStageTransformPosition(p,t,stageTransformAt(p,t).position);
  for(const property of ['rotation','scale','visible'] as Property[])putPropertyKey(p,target,member,property,(pose as unknown as Record<Property,Vec3|boolean>)[property],t);
@@ -84,7 +81,7 @@ export function insertTransformKeys(p:Project,target:Target,member:number,t:numb
 }
 
 export function keyArray(p:Project,ref:KeyRef):{id:string;time:number;ease?:Ease}[]{
- switch(ref.kind){case 'memberPosition':return p.memberPositionKeys??[];case 'memberProperty':return p.memberPropertyKeys??[];case 'clipPosition':return p.clips.find(c=>c.id===ref.clip)?.positionKeys??[];case 'stagePosition':return p.stagePositionKeys??[];case 'stagePreset':return p.stageKeys??[];case 'stageProperty':return p.stagePropertyKeys??[];case 'formation':return p.formations;case 'camera':return p.cameras;}
+ switch(ref.kind){case 'memberPosition':return p.memberPositionKeys??[];case 'memberProperty':return p.memberPropertyKeys??[];case 'clipPosition':return p.clips.find(c=>c.id===ref.clip)?.positionKeys??[];case 'stagePosition':return p.stagePositionKeys??[];case 'stagePreset':return p.stageKeys??[];case 'stageProperty':return p.stagePropertyKeys??[];case 'formation':return p.formations;case 'camera':return (ref.camera?p.sceneCameras?.find(c=>c.id===ref.camera):activeCamera(p))?.keys??p.cameras;}
 }
 export function keyGlobalTime(p:Project,ref:KeyRef){const key=keyArray(p,ref).find(k=>k.id===ref.id);return (key?.time??0)+(ref.kind==='clipPosition'?(p.clips.find(c=>c.id===ref.clip)?.start??0):0);}
 export function deleteKey(p:Project,ref:KeyRef){const keys=keyArray(p,ref),index=keys.findIndex(k=>k.id===ref.id);if(index>=0)keys.splice(index,1);}

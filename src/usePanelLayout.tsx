@@ -3,7 +3,7 @@ import {usePointerDrag} from './usePointerDrag';
 
 type Panel='library'|'inspector'|'timeline';
 type Layout=Record<Panel,number>;
-const defaults:Layout={library:230,inspector:264,timeline:280};
+const defaults:Layout={library:230,inspector:264,timeline:250};
 const storageKey='voyager-panel-layout-v1';
 
 function readLayout():Layout{
@@ -30,7 +30,7 @@ export function usePanelLayout(disabled:boolean){
       return Math.max(150,Math.min(value,root.clientHeight-header-28-220));
     }
     const mobile=window.innerWidth<=1000;
-    const rail=window.innerWidth>=1550?60:window.innerWidth<=1200?45:56;
+    const rail=0;
     const other=panel==='library'?current.inspector:current.library;
     const min=panel==='library'?170:200;
     const max=mobile?Math.min(460,root.clientWidth-64):Math.min(460,root.clientWidth-rail-other-320);

@@ -48,8 +48,8 @@ export async function importFiles(files:File[]){
    assertCompatible(r.object,base??r.object,r.clip!);
   }
   const previous=resources.get(r.info.id);resources.set(r.info.id,r);if(previous?.object&&previous.object!==r.object)disposeObject(previous.object);
-  useStudio.getState().edit(d=>{if(!d.assets.some(a=>a.id===r!.info.id))d.assets.push(r!.info);if(r!.info.kind==='audio'){d.audio=r!.info.id;d.duration=Math.max(d.duration,r!.info.duration);d.output.end=d.duration;}else if(!d.baseRig)d.baseRig=r!.info.id;});
-  notice(`${file.name} 추가 완료${r.object?' · 라이브러리에서 멤버에게 배치하세요.':''}`);
+  useStudio.getState().edit(d=>{if(!d.assets.some(a=>a.id===r!.info.id))d.assets.push(r!.info);if(r!.info.kind==='audio'){d.audio=r!.info.id;d.duration=Math.max(d.duration,r!.info.duration);d.output.end=d.duration;}else if(!d.baseRig){d.baseRig=r!.info.id;const demos=new Set(d.assets.filter(a=>a.kind==='demo').map(a=>a.id));d.clips=d.clips.filter(c=>!demos.has(c.asset));d.assets=d.assets.filter(a=>a.kind!=='demo');}});
+  notice(`${file.name} 추가 완료`);
  }catch(e){if(r?.object)disposeObject(r.object);notice(`${file.name}: ${(e as Error).message}`);}}
 }
 export function download(blob:Blob,name:string){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),15000);}

@@ -1,0 +1,25 @@
+import {useEffect,useRef,useState} from 'react';
+import {X,Download,Film} from 'lucide-react';
+import {zipSync} from 'fflate';
+import {useStudio,notice} from './store';
+import {ScrubNumber} from './ScrubNumber';
+import {cameraFileName} from './cameras';
+import {download} from './assets';
+import type {StudioEngine} from './engine';
+type Result={name:string;url:string;blob:Blob;camera:string};
+export function OutputDialog({getEngine,close}:{getEngine:()=>StudioEngine|null;close:()=>void}){
+ const p=useStudio(s=>s.project),recording=useStudio(s=>s.recording),[busy,setBusy]=useState(false),[progress,setProgress]=useState(0),[current,setCurrent]=useState(''),[results,setResults]=useState<Result[]>([]),[error,setError]=useState('');
+ const resultsRef=useRef<Result[]>([]),cancel=useRef(false);useEffect(()=>()=>{resultsRef.current.forEach(r=>URL.revokeObjectURL(r.url));},[]);
+ const edit=useStudio.getState().edit;
+ const selected=p.sceneCameras?.filter(c=>c.enabled)??[];
+ async function render(){
+  if(!selected.length)return;setBusy(true);setError('');setProgress(0);cancel.current=false;resultsRef.current.forEach(r=>URL.revokeObjectURL(r.url));resultsRef.current=[];setResults([]);
+  try{for(let i=0;i<selected.length;i++){
+   if(cancel.current)break;const cam=selected[i];setCurrent(cam.name);const blob=await getEngine()?.exportVideo(n=>setProgress((i+n)/selected.length),{id:cam.id,start:cam.recordStart,end:cam.recordEnd});if(!blob)throw Error('렌더러를 사용할 수 없습니다.');const result={name:cameraFileName(p,cam),url:URL.createObjectURL(blob),blob,camera:cam.name};resultsRef.current.push(result);setResults([...resultsRef.current]);
+  }if(!cancel.current&&resultsRef.current.length){if(resultsRef.current.length===1)download(resultsRef.current[0].blob,resultsRef.current[0].name);else await downloadAll();}}
+  catch(e){if((e as Error).name!=='AbortError'){setError((e as Error).message);notice((e as Error).message);}}
+  finally{setBusy(false);setCurrent('');}
+ }
+ async function downloadAll(){const entries:Record<string,Uint8Array>={};for(const r of resultsRef.current)entries[r.name]=new Uint8Array(await r.blob.arrayBuffer());download(new Blob([zipSync(entries,{level:0}) as Uint8Array<ArrayBuffer>],{type:'application/zip'}),'VOYAGER_CAMERAS.zip');}
+ return <div className="modal-backdrop"><div className="export-dialog camera-output"><div className="dialog-header"><strong><Film size={16}/> 카메라별 MP4 출력</strong><button title="닫기" disabled={busy||recording} onClick={close}><X size={18}/></button></div><div className="output-settings"><label>비율<select aria-label="출력 비율" disabled={busy} value={p.output.aspect} onChange={e=>edit(d=>{d.output.aspect=e.target.value as '16:9'|'9:16';})}><option>16:9</option><option>9:16</option></select></label><label>해상도<select aria-label="출력 해상도" disabled={busy} value={p.output.height} onChange={e=>edit(d=>{d.output.height=+e.target.value as 720|1080;})}><option value={720}>720p</option><option value={1080}>1080p</option></select></label><label>FPS<select aria-label="출력 FPS" disabled={busy} value={p.output.fps} onChange={e=>edit(d=>{d.output.fps=+e.target.value as 24|30;})}><option>24</option><option>30</option></select></label><span className="format-badge">MP4 · H.264</span></div><div className="output-cameras">{p.sceneCameras?.map(cam=><div className="output-camera-row" key={cam.id}><label className="check-field"><input type="checkbox" disabled={busy} aria-label={`${cam.name} 출력`} checked={cam.enabled} onChange={e=>edit(d=>{d.sceneCameras!.find(c=>c.id===cam.id)!.enabled=e.target.checked;})}/>{cam.name}<small>CAM{String(cam.number).padStart(2,'0')}</small></label><div className="two-fields"><ScrubNumber label={`${cam.name} 시작`} disabled={busy} min={0} max={cam.recordEnd-1/p.output.fps} value={cam.recordStart} step={1/p.output.fps} onChange={v=>edit(d=>{d.sceneCameras!.find(c=>c.id===cam.id)!.recordStart=v;})}/><ScrubNumber label={`${cam.name} 종료`} disabled={busy} min={cam.recordStart+1/p.output.fps} max={p.duration} value={cam.recordEnd} step={1/p.output.fps} onChange={v=>edit(d=>{d.sceneCameras!.find(c=>c.id===cam.id)!.recordEnd=v;})}/></div></div>)}</div><label className="check-field"><input type="checkbox" disabled={busy} checked={p.output.audio} onChange={e=>edit(d=>{d.output.audio=e.target.checked;})}/>음악 포함</label>{error&&<div role="alert" className="output-error">{error}</div>}{busy?<div className="render-progress"><progress value={progress} max={1}/><span>{current} · {Math.round(progress*100)}%</span><button onClick={()=>{cancel.current=true;getEngine()?.cancelExport?.();}}>취소</button></div>:<button className="primary export-start" disabled={!selected.length} onClick={()=>{void render();}}>선택 카메라 {selected.length}개 출력</button>}{results.length>0&&<div className="output-results">{results.map(r=><div key={r.name}><strong>{r.camera}</strong><video src={r.url} controls preload="metadata" aria-label={`${r.camera} MP4 미리보기`}/><a href={r.url} download={r.name}><Download size={13}/>{r.name}</a></div>)}{results.length>1&&<button className="full-button" onClick={()=>{void downloadAll();}}>모두 ZIP으로 저장</button>}</div>}</div></div>;
+}

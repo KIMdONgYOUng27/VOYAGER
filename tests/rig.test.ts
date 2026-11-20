@@ -12,7 +12,7 @@ test('real FBX: five independent skeletons and deterministic sampled poses inclu
  const object=new FBXLoader().parse(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength),'');
  const id='test-fbx';const clip=object.animations[0];
  resources.set(id,{info:{id,name:'Samba',kind:'fbx',duration:clip.duration},file:new File([b],'Samba Dancing.fbx'),object,clip});
- const p=initialProject();p.baseRig=id;p.assets=[resources.get(id)!.info];p.clips=p.members.flatMap((_,member)=>[{id:'clip-'+member,member,asset:id,start:0,duration:18,offset:member*.1,speed:1,loop:true,fade:0},{id:'overlap-'+member,member,asset:id,start:4,duration:4,offset:8,speed:1,loop:true,fade:1}]);useStudio.getState().replace(p);
+ const p=initialProject();p.baseRig=id;p.assets=[resources.get(id)!.info];p.clips=p.members.flatMap((_,member)=>[{id:'clip-'+member,member,asset:id,start:0,duration:18,offset:member*.1,speed:1,loop:true,fade:0},{id:'overlap-'+member,member,asset:id,start:4,duration:4,offset:8,speed:1,loop:true,fade:1}]);useStudio.setState({project:p});
  const engine=Object.create(StudioEngine.prototype) as StudioEngine;
  Object.assign(engine,{scene:new T.Scene(),stageRoot:new T.Group(),baseFov:38,actors:[],lastBase:'',grid:new T.GridHelper(),renderer:{render:(scene:T.Scene)=>scene.updateMatrixWorld(true)}});
  engine.evaluate(5);assert.equal(engine.actors.length,5);

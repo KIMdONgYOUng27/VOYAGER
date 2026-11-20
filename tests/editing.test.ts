@@ -19,8 +19,8 @@ test('Delete removes just the selected clip, preserves other tracks, and support
 });
 
 test('Delete without a selection or during recording makes no edit',()=>{
-  const project=initialProject();
-  useStudio.getState().replace(project);
+  useStudio.getState().replace(initialProject());
+  const project=useStudio.getState().project;
   useStudio.getState().deleteSelectedClip();
   assert.equal(useStudio.getState().project,project);
   useStudio.setState({clip:project.clips[0].id,recording:true});
