@@ -8,3 +8,10 @@ export function memberKeyChannels(p:Project,member:number):KeyChannel[]{
  if(p.clips.some(c=>c.member===member&&c.positionKeys?.some(k=>k.time>=0&&k.time<=c.duration)))channels.push('clip');
  return channels;
 }
+export type StageChannel='position'|'preset'|'rotation'|'scale'|'visible';
+export function stageKeyChannels(p:Project):StageChannel[]{
+ const channels:StageChannel[]=[];
+ if(p.stagePositionKeys?.length)channels.push('position');if(p.stageKeys?.length)channels.push('preset');
+ for(const property of ['rotation','scale','visible'] as const)if(p.stagePropertyKeys?.some(k=>k.property===property))channels.push(property);
+ return channels;
+}

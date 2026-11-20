@@ -9,7 +9,7 @@ import * as T from 'three';
 import {FBXLoader} from 'three/addons/loaders/FBXLoader.js';
 import {adaptAnimation} from '../src/retarget.ts';
 import {initialProject} from '../src/model.ts';
-import {memberKeyChannels} from '../src/keyframeLayout.ts';
+import {memberKeyChannels,stageKeyChannels} from '../src/keyframeLayout.ts';
 
 function rig(rest:number,length:number){const root=new T.Group(),hips=new T.Bone(),shoulder=new T.Bone(),arm=new T.Bone();hips.name='mixamorigHips';shoulder.name='mixamorigRightShoulder';arm.name='mixamorigRightArm';root.add(hips);hips.add(shoulder);shoulder.add(arm);shoulder.position.y=1;shoulder.rotation.z=rest;arm.position.y=length;root.updateMatrixWorld(true);return {root,hips,shoulder,arm};}
 test('different shoulder rest poses are converted as world-space motion, not rejected or copied blindly',()=>{
@@ -19,7 +19,7 @@ test('matching rigs retain original tracks and an incompatible hierarchy still g
  const a=rig(0,1),b=rig(0,1),clip=new T.AnimationClip('same',1,[new T.QuaternionKeyframeTrack(a.arm.name+'.quaternion',[0,1],[0,0,0,1,0,0,0,1])]);assert.equal(adaptAnimation(a.root,b.root,clip),clip);b.hips.add(b.arm);assert.throws(()=>adaptAnimation(a.root,b.root,clip),/계층/);
 });
 test('empty member key rows disappear, and only channels containing visible keys are listed',()=>{
- const p=initialProject();for(let i=0;i<5;i++)assert.deepEqual(memberKeyChannels(p,i),[]);p.memberPropertyKeys=[{id:'r',member:1,time:0,ease:'linear',property:'rotation',value:[0,0,0]}];assert.deepEqual(memberKeyChannels(p,1),['rotation']);assert.deepEqual(memberKeyChannels(p,0),[]);p.clips[0].positionKeys=[{id:'hidden',time:50,position:[0,0,0],ease:'linear'}];assert.deepEqual(memberKeyChannels(p,0),[]);p.clips[0].positionKeys.push({id:'visible',time:1,position:[1,0,0],ease:'linear'});assert.deepEqual(memberKeyChannels(p,0),['clip']);
+ const p=initialProject();assert.deepEqual(stageKeyChannels(p),['preset']);p.stageKeys=[];assert.deepEqual(stageKeyChannels(p),[]);for(let i=0;i<5;i++)assert.deepEqual(memberKeyChannels(p,i),[]);p.memberPropertyKeys=[{id:'r',member:1,time:0,ease:'linear',property:'rotation',value:[0,0,0]}];assert.deepEqual(memberKeyChannels(p,1),['rotation']);assert.deepEqual(memberKeyChannels(p,0),[]);p.clips[0].positionKeys=[{id:'hidden',time:50,position:[0,0,0],ease:'linear'}];assert.deepEqual(memberKeyChannels(p,0),[]);p.clips[0].positionKeys.push({id:'visible',time:1,position:[1,0,0],ease:'linear'});assert.deepEqual(memberKeyChannels(p,0),['clip']);
 });
 const directory=process.env.VOYAGER_FBX_FIXTURES;
 test('local regression: original Swing and the separately exported Swing/Breakdance files can share one base rig',{skip:!directory?'Set VOYAGER_FBX_FIXTURES to run the user-file regression':false},()=>{

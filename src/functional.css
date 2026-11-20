@@ -106,3 +106,6 @@
 
 .functional-studio .member-key-row.compact-key-channel,.functional-studio .position-track-label.compact-key-label{height:20px!important;min-height:20px!important;padding-block:0!important;display:flex;align-items:center;font-size:9px!important}
 .functional-studio .compact-key-channel .animation-key{top:2px!important}
+
+.functional-studio .animation-scene-keys.stage.compact-scene-channel,.functional-studio .formation-label.compact-scene-label{height:20px!important;min-height:20px!important;display:flex;align-items:center;font-size:9px}
+.functional-studio .compact-scene-channel .animation-key{top:2px!important}
