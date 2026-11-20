@@ -1,3 +1,4 @@
+import {adaptAnimation} from './retarget.ts';
 import * as THREE from 'three';
 import {FBXLoader} from 'three/addons/loaders/FBXLoader.js';
 import {zipSync,unzipSync,strToU8,strFromU8} from 'fflate';
@@ -9,14 +10,6 @@ export const resources=new Map<string,Resource>();
 export const canonical=(name:string)=>name.replace(/^.*[|:]/,'').replace(/^mixamorig\d*/i,'').replace(/[^a-z0-9]/gi,'').toLowerCase();
 export function bonesOf(root:THREE.Object3D){const bones=new Map<string,THREE.Bone>();root.traverse(o=>{const key=canonical(o.name);if((o as THREE.Bone).isBone&&!bones.has(key))bones.set(key,o as THREE.Bone);});return bones;}
 export function hasSkin(root:THREE.Object3D){let yes=false;root.traverse(o=>{if((o as THREE.SkinnedMesh).isSkinnedMesh)yes=true;});return yes;}
-function assertCompatible(object:THREE.Group,base:THREE.Group,clip:THREE.AnimationClip){
- const target=bonesOf(base),source=bonesOf(object);let tracks=0;
- for(const tr of clip.tracks){const node=tr.name.slice(0,tr.name.lastIndexOf('.'));if(!target.has(canonical(node)))throw Error(`스켈레톤 불일치: ${node}. 기준 캐릭터와 동일한 Mixamo 캐릭터에서 모션을 다운로드하세요.`);tracks++;}
- if(!tracks)throw Error('이 FBX에는 재생할 애니메이션 트랙이 없습니다.');
- for(const [key,b] of source){const t=target.get(key);if(!t)continue; const parent=canonical(b.parent?.name??''),tp=canonical(t.parent?.name??'');if(b.parent instanceof THREE.Bone&&parent!==tp)throw Error(`본 계층이 다릅니다: ${b.name}. 범용 리타게팅은 지원하지 않습니다.`);
-  if(b.quaternion.angleTo(t.quaternion)>.2)throw Error(`기준 포즈가 다른 스켈레톤입니다: ${b.name}. 동일한 캐릭터의 모션을 사용하세요.`);
- }
-}
 export function disposeObject(root:THREE.Object3D){const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>(),textures=new Set<THREE.Texture>();root.traverse(o=>{const m=o as THREE.Mesh;if(m.geometry)geometries.add(m.geometry);if(m.material)for(const mat of Array.isArray(m.material)?m.material:[m.material]){materials.add(mat);for(const v of Object.values(mat))if(v instanceof THREE.Texture)textures.add(v);}});geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());}
 export class Sound{
  context:AudioContext|null=null;source:AudioBufferSourceNode|null=null;destination:MediaStreamAudioDestinationNode|null=null;anchor=0;offset=0;rate=1;running=false;
@@ -45,7 +38,7 @@ export async function importFiles(files:File[]){
   notice(`${file.name} 불러오는 중…`);r=await parseResource(file);const p=useStudio.getState().project;
   if(r.object){const base=p.baseRig?resources.get(p.baseRig)?.object:undefined;
    if(!base&&!hasSkin(r.object))throw Error('먼저 With Skin 옵션으로 다운로드한 캐릭터 FBX를 추가하세요. 이후 Without Skin 모션도 사용할 수 있습니다.');
-   assertCompatible(r.object,base??r.object,r.clip!);
+   r.clip=adaptAnimation(r.object,base??r.object,r.clip!);
   }
   const previous=resources.get(r.info.id);resources.set(r.info.id,r);if(previous?.object&&previous.object!==r.object)disposeObject(previous.object);
   useStudio.getState().edit(d=>{if(!d.assets.some(a=>a.id===r!.info.id))d.assets.push(r!.info);if(r!.info.kind==='audio'){d.audio=r!.info.id;d.duration=Math.max(d.duration,r!.info.duration);d.output.end=d.duration;}else if(!d.baseRig){d.baseRig=r!.info.id;const demos=new Set(d.assets.filter(a=>a.kind==='demo').map(a=>a.id));d.clips=d.clips.filter(c=>!demos.has(c.asset));d.assets=d.assets.filter(a=>a.kind!=='demo');}});
@@ -58,7 +51,7 @@ async function activate(p:Project,files:{id:string;file:File}[]){
  const staged=new Map<string,Resource>();
  try{for(const f of files)staged.set(f.id,await parseResource(f.file,f.id));
  const base=p.baseRig?staged.get(p.baseRig)?.object:undefined;
- if(base){if(!hasSkin(base))throw Error('기준 캐릭터에 스킨이 없습니다.');for(const r of staged.values())if(r.object&&r.info.id!==p.baseRig)assertCompatible(r.object,base,r.clip!);}
+ if(base){if(!hasSkin(base))throw Error('기준 캐릭터에 스킨이 없습니다.');for(const r of staged.values())if(r.object&&r.info.id!==p.baseRig)r.clip=adaptAnimation(r.object,base,r.clip!);}
  }catch(e){staged.forEach(r=>{if(r.object)disposeObject(r.object);});throw e;}
  sound.stop();useStudio.setState({playing:false});resources.forEach(r=>{if(r.object)disposeObject(r.object);});resources.clear();staged.forEach((v,k)=>resources.set(k,v));useStudio.getState().replace(p);
  const missing=p.assets.filter(a=>a.kind!=='demo'&&!resources.has(a.id));notice(missing.length?`프로젝트 열림 · ${missing.length}개 에셋 누락. 원본 파일을 다시 업로드하세요.`:'프로젝트와 에셋을 복원했습니다.');

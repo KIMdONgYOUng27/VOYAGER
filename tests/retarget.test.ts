@@ -1,0 +1,30 @@
+import {StudioEngine} from '../src/engine.ts';
+import {resources} from '../src/assets.ts';
+import {useStudio} from '../src/store.ts';
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync,existsSync} from 'node:fs';
+import {join} from 'node:path';
+import * as T from 'three';
+import {FBXLoader} from 'three/addons/loaders/FBXLoader.js';
+import {adaptAnimation} from '../src/retarget.ts';
+import {initialProject} from '../src/model.ts';
+import {memberKeyChannels} from '../src/keyframeLayout.ts';
+
+function rig(rest:number,length:number){const root=new T.Group(),hips=new T.Bone(),shoulder=new T.Bone(),arm=new T.Bone();hips.name='mixamorigHips';shoulder.name='mixamorigRightShoulder';arm.name='mixamorigRightArm';root.add(hips);hips.add(shoulder);shoulder.add(arm);shoulder.position.y=1;shoulder.rotation.z=rest;arm.position.y=length;root.updateMatrixWorld(true);return {root,hips,shoulder,arm};}
+test('different shoulder rest poses are converted as world-space motion, not rejected or copied blindly',()=>{
+ const source=rig(Math.PI/2,1),target=rig(0,2),first=source.shoulder.quaternion.clone(),last=new T.Quaternion().setFromEuler(new T.Euler(0,0,Math.PI));const clip=new T.AnimationClip('motion',1,[new T.QuaternionKeyframeTrack(source.shoulder.name+'.quaternion',[0,1],[...first.toArray(),...last.toArray()]),new T.QuaternionKeyframeTrack(source.arm.name+'.quaternion',[0,1],[0,0,0,1,0,0,0,1]),new T.VectorKeyframeTrack(source.hips.name+'.position',[0,1],[0,0,0,0,1,0])]);const adapted=adaptAnimation(source.root,target.root,clip),mixer=new T.AnimationMixer(target.root),action=mixer.clipAction(adapted);action.setLoop(T.LoopOnce,1);action.clampWhenFinished=true;action.play();mixer.setTime(0);assert.ok(target.shoulder.quaternion.clone().normalize().angleTo(new T.Quaternion())<1e-5);mixer.setTime(1);assert.ok(target.shoulder.quaternion.clone().normalize().angleTo(new T.Quaternion().setFromEuler(new T.Euler(0,0,Math.PI/2)))<1e-5);assert.ok(target.arm.quaternion.clone().normalize().angleTo(new T.Quaternion())<1e-5);assert.equal(target.arm.position.y,2);assert.ok(Math.abs(target.hips.position.y-3)<1e-5);assert.ok(source.shoulder.quaternion.angleTo(first)<1e-8);assert.deepEqual(Array.from(clip.tracks[0].values.slice(0,4)),Array.from(new Float32Array(first.toArray())));
+});
+test('matching rigs retain original tracks and an incompatible hierarchy still gets a specific error',()=>{
+ const a=rig(0,1),b=rig(0,1),clip=new T.AnimationClip('same',1,[new T.QuaternionKeyframeTrack(a.arm.name+'.quaternion',[0,1],[0,0,0,1,0,0,0,1])]);assert.equal(adaptAnimation(a.root,b.root,clip),clip);b.hips.add(b.arm);assert.throws(()=>adaptAnimation(a.root,b.root,clip),/계층/);
+});
+test('empty member key rows disappear, and only channels containing visible keys are listed',()=>{
+ const p=initialProject();for(let i=0;i<5;i++)assert.deepEqual(memberKeyChannels(p,i),[]);p.memberPropertyKeys=[{id:'r',member:1,time:0,ease:'linear',property:'rotation',value:[0,0,0]}];assert.deepEqual(memberKeyChannels(p,1),['rotation']);assert.deepEqual(memberKeyChannels(p,0),[]);p.clips[0].positionKeys=[{id:'hidden',time:50,position:[0,0,0],ease:'linear'}];assert.deepEqual(memberKeyChannels(p,0),[]);p.clips[0].positionKeys.push({id:'visible',time:1,position:[1,0,0],ease:'linear'});assert.deepEqual(memberKeyChannels(p,0),['clip']);
+});
+const directory=process.env.VOYAGER_FBX_FIXTURES;
+test('local regression: original Swing and the separately exported Swing/Breakdance files can share one base rig',{skip:!directory?'Set VOYAGER_FBX_FIXTURES to run the user-file regression':false},()=>{
+ const previousWindow=(globalThis as any).window,load=T.TextureLoader.prototype.load;
+ (globalThis as any).window={URL:{createObjectURL:()=> 'blob:fixture'}};T.TextureLoader.prototype.load=function(){return new T.Texture();};
+ try{const parse=(name:string)=>{const path=join(directory!,name);assert.ok(existsSync(path));const bytes=readFileSync(path);return new FBXLoader().parse(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),'');};const base=parse('Swing Dancing.fbx');for(const name of ['Swing Dancing (1).fbx','Breakdance 1990.fbx']){const source=parse(name),original=source.animations[0],adapted=adaptAnimation(source,base,original);assert.equal(adapted.duration,original.duration);assert.ok(adapted.tracks.length>40);assert.ok(adapted.tracks.every(t=>Array.from(t.values).every(Number.isFinite)));assert.notEqual(adapted,original);const baseId='regression-base',motionId='regression-motion';resources.set(baseId,{info:{id:baseId,name:'base',kind:'fbx',duration:base.animations[0].duration},object:base,clip:base.animations[0],file:new File([],'base.fbx')});resources.set(motionId,{info:{id:motionId,name,kind:'fbx',duration:adapted.duration},object:source,clip:adapted,file:new File([],name)});const project=initialProject();project.baseRig=baseId;project.assets=[resources.get(baseId)!.info,resources.get(motionId)!.info];project.clips=project.members.map((_,member)=>({id:'regression-'+member,member,asset:motionId,start:0,duration:adapted.duration,offset:0,speed:1,loop:true,fade:0}));useStudio.setState({project});const engine=Object.create(StudioEngine.prototype) as StudioEngine;Object.assign(engine,{scene:new T.Scene(),stageRoot:new T.Group(),baseFov:38,actors:[],lastBase:'',grid:new T.GridHelper(),renderer:{render:(scene:T.Scene)=>scene.updateMatrixWorld(true)}});engine.evaluate(1);const capture=()=>engine.actors.map(a=>[...a.bones.values()].flatMap(b=>[...b.quaternion.toArray(),...b.position.toArray()]));const before=capture();assert.ok(before.flat().every(Number.isFinite));engine.evaluate(1.5);assert.notDeepEqual(capture(),before);engine.evaluate(1);assert.deepEqual(capture(),before);engine.clearActors();resources.delete(baseId);resources.delete(motionId);}}
+ finally{T.TextureLoader.prototype.load=load;if(previousWindow===undefined)delete (globalThis as any).window;else (globalThis as any).window=previousWindow;}
+});
